@@ -45,7 +45,7 @@ export const options = {
   }),
 };
 
-const TERMS = ['clean', 'kleppmann', 'domain', 'drina', 'test driven', 'software', 'Desgning Data', 'Clen Cdoe'];
+const TERMS = ['clean', 'kleppmann', 'domain', 'drina', 'test driven', 'software', 'Desgning Data', 'Clen Code'];
 
 export function setup() {
   const ready = http.get(`${BASE_URL}/health/ready`);
