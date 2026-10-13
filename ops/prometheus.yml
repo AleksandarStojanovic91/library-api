@@ -1,0 +1,8 @@
+global: { scrape_interval: 10s }
+scrape_configs:
+  - job_name: api-java
+    metrics_path: /metrics
+    static_configs: [{ targets: ["api-java:8081"] }]
+  - job_name: api-ts
+    metrics_path: /metrics
+    static_configs: [{ targets: ["api-ts:8082"] }]

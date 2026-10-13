@@ -1,0 +1,30 @@
+{
+  "name": "library-api-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Black-box API test suite run unchanged against the Java and TypeScript implementations",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "generate": "openapi-typescript ../contract/openapi.yaml --default-non-nullable false -o src/generated/openapi.d.ts",
+    "typecheck": "npm run generate && tsc --noEmit",
+    "test": "playwright test",
+    "test:java": "playwright test --project=java",
+    "test:ts": "playwright test --project=ts",
+    "test:time-travel:java": "playwright test --project=java-time-travel",
+    "test:time-travel:ts": "playwright test --project=ts-time-travel",
+    "list": "playwright test --list",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.0",
+    "@types/node": "24.19.2",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3",
+    "yaml": "2.9.1"
+  }
+}

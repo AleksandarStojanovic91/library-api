@@ -1,0 +1,68 @@
+# Every SPEC.md environment variable is mapped here; defaults match the SPEC for the Java service.
+server:
+  port: ${PORT:8081}
+  shutdown: graceful                    # SIGTERM: stop accepting, finish in-flight requests
+  error:
+    whitelabel:
+      enabled: false
+
+spring:
+  application:
+    name: library-api-java
+  threads:
+    virtual:
+      enabled: true                     # Tomcat request threads, @Scheduled tasks
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  datasource:                           # overridden by DATABASE_URL (see LibraryEnvironmentPostProcessor)
+    url: jdbc:postgresql://localhost:5432/library_java
+    username: library
+    password: library
+    hikari:
+      maximum-pool-size: 20
+      connection-timeout: 5000
+  flyway:
+    locations: classpath:db/migration   # db/migrations/*.sql, copied in by the Maven build
+  data:
+    redis:
+      url: ${REDIS_URL:redis://localhost:6379/0}
+      timeout: 300ms
+      connect-timeout: 300ms
+  task:
+    scheduling:
+      shutdown:
+        await-termination: true         # let a running worker tick finish
+        await-termination-period: 20s
+
+management:
+  endpoints:
+    web:
+      base-path: /                      # Prometheus scrape at /metrics; /health/* is HealthController (contract shape)
+      exposure:
+        include: prometheus
+      path-mapping:
+        prometheus: metrics
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+  tracing:
+    sampling:
+      probability: 1.0                  # traces are only exported when OTEL_EXPORTER_OTLP_ENDPOINT is set
+
+logging:
+  structured:
+    format:
+      console: logstash                 # one JSON object per line
+
+library:
+  jwt-secret: ${JWT_SECRET:dev-only-secret-change-me-at-least-32-bytes!!}
+  rate-limit-per-minute: ${RATE_LIMIT_PER_MINUTE:120}
+  rate-limit-namespace: ${RATE_LIMIT_NAMESPACE:rl}
+  loan-days: ${LOAN_DAYS:14}
+  fee-cents-per-day: ${FEE_CENTS_PER_DAY:50}
+  reservation-hold-hours: ${RESERVATION_HOLD_HOURS:48}
+  clock-offset-seconds: ${CLOCK_OFFSET_SECONDS:0}
+  worker:
+    enabled: ${WORKER_ENABLED:true}
+    interval-ms: ${WORKER_INTERVAL_MS:5000}

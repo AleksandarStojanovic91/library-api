@@ -1,0 +1,1115 @@
+openapi: 3.1.0
+info:
+  title: Library API
+  version: 1.0.0
+  summary: One contract, two implementations (Java / Spring Boot and TypeScript / NestJS).
+  description: |
+    A small lending library: books, authors, copies, members, loans and reservations.
+
+    Conventions used by every endpoint:
+    - Errors are RFC 9457 problem details (`application/problem+json`) with a stable `code`.
+    - Lists use cursor pagination: `?limit=` (1-100, default 20) and `?cursor=` from `page.nextCursor`.
+    - Writes to an existing resource need `If-Match` with the `ETag` from the last read (optimistic concurrency).
+    - `POST /loans` needs an `Idempotency-Key` header; repeating a request with the same key replays the first response.
+    - Every response carries `X-Request-Id` (echoed if the client sent one) and rate-limit headers
+      `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`.
+    - `/api/v1/loans*` is deprecated in favour of `/api/v2/loans*`: v1 responses carry `Deprecation`, `Sunset`
+      and a `Link: <...>; rel="successor-version"` header.
+
+    Business rules:
+    - A member can hold at most `maxActiveLoans` (default 3) active loans; a SUSPENDED member cannot borrow.
+    - A loan takes one AVAILABLE copy of the book; two parallel borrows can never take the same copy.
+    - A loan lasts 14 days. Returning late costs 50 cents per started overdue day (EUR).
+    - If no copy is available the client gets 409 `no-copy-available` and can reserve the book.
+    - Reservations form a FIFO queue per book. When a copy comes back and someone is waiting, the copy is held
+      (status RESERVED) for the first reservation for 48 hours and the reservation becomes READY.
+      Only that member can borrow the held copy (their borrow fulfils the reservation).
+  contact:
+    name: Aleksandar Stojanovic
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: http://localhost:8081
+    description: Java / Spring Boot implementation
+  - url: http://localhost:8082
+    description: TypeScript / NestJS implementation
+security:
+  - bearerAuth: []
+tags:
+  - name: auth
+  - name: books
+  - name: authors
+  - name: members
+  - name: loans
+  - name: reservations
+  - name: ops
+
+paths:
+  /api/v1/auth/token:
+    post:
+      tags: [auth]
+      summary: Exchange demo credentials for a JWT
+      description: Demo users are seeded by the migrations (see README). Tokens are HS256, valid for 1 hour.
+      security: []
+      operationId: issueToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TokenRequest' }
+      responses:
+        '200':
+          description: Token issued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/v1/books:
+    get:
+      tags: [books]
+      summary: List and search books
+      operationId: listBooks
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+        - name: q
+          in: query
+          description: Full-text search over title, description and author names.
+          schema: { type: string, maxLength: 200 }
+        - name: authorId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: tag
+          in: query
+          schema: { type: string, maxLength: 50 }
+        - name: available
+          in: query
+          description: Only books with at least one AVAILABLE copy.
+          schema: { type: boolean }
+        - name: sort
+          in: query
+          description: Sort order. `title` (default) or `-publishedYear`.
+          schema: { type: string, enum: [title, -publishedYear], default: title }
+      responses:
+        '200':
+          description: A page of books
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BookPage' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    post:
+      tags: [books]
+      summary: Add a book (librarian)
+      operationId: createBook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BookCreate' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Book' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/v1/books/{bookId}:
+    parameters:
+      - { $ref: '#/components/parameters/BookId' }
+    get:
+      tags: [books]
+      summary: Get a book
+      operationId: getBook
+      security: []
+      responses:
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '200':
+          description: The book
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Book' }
+        '304':
+          description: Not modified (the `If-None-Match` ETag still matches)
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    patch:
+      tags: [books]
+      summary: Update a book (librarian)
+      operationId: updateBook
+      parameters:
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: { $ref: '#/components/schemas/BookUpdate' }
+          application/json:
+            schema: { $ref: '#/components/schemas/BookUpdate' }
+      responses:
+        '200':
+          description: Updated
+          headers:
+            ETag: { $ref: '#/components/headers/ETag' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Book' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '428': { $ref: '#/components/responses/PreconditionRequired' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    delete:
+      tags: [books]
+      summary: Delete a book that has no copies on loan (librarian)
+      operationId: deleteBook
+      responses:
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/v1/books/{bookId}/copies:
+    parameters:
+      - { $ref: '#/components/parameters/BookId' }
+    get:
+      tags: [books]
+      summary: List the physical copies of a book
+      operationId: listCopies
+      security: []
+      responses:
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '200':
+          description: Copies
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Copy' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    post:
+      tags: [books]
+      summary: Add a copy (librarian)
+      operationId: addCopy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CopyCreate' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Copy' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/v1/authors:
+    get:
+      tags: [authors]
+      summary: List authors
+      operationId: listAuthors
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: A page of authors
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthorPage' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    post:
+      tags: [authors]
+      summary: Add an author (librarian)
+      operationId: createAuthor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthorCreate' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Author' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/v1/authors/{authorId}:
+    get:
+      tags: [authors]
+      summary: Get an author
+      operationId: getAuthor
+      security: []
+      parameters:
+        - name: authorId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '200':
+          description: The author
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Author' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/v1/members:
+    get:
+      tags: [members]
+      summary: List members (librarian)
+      operationId: listMembers
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: A page of members
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MemberPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    post:
+      tags: [members]
+      summary: Register a member (librarian)
+      operationId: createMember
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MemberCreate' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Member' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/v1/members/me:
+    get:
+      tags: [members]
+      summary: The member behind the token
+      operationId: getMe
+      responses:
+        '200':
+          description: The current member
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Member' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/v1/members/{memberId}:
+    get:
+      tags: [members]
+      summary: Get a member (librarian, or the member themself)
+      operationId: getMember
+      parameters:
+        - { $ref: '#/components/parameters/MemberId' }
+      responses:
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '200':
+          description: The member
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Member' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/v1/members/{memberId}/status:
+    put:
+      tags: [members]
+      summary: Suspend or reactivate a member, or change their loan limit (librarian)
+      operationId: updateMemberStatus
+      parameters:
+        - { $ref: '#/components/parameters/MemberId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MemberStatusUpdate' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Member' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/v1/loans:
+    get:
+      tags: [loans]
+      summary: List loans (deprecated, use v2)
+      deprecated: true
+      description: Members see only their own loans; librarians can filter by member.
+      operationId: listLoansV1
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/MemberIdQuery' }
+        - { $ref: '#/components/parameters/LoanStatusQuery' }
+      responses:
+        '200':
+          description: A page of loans
+          headers:
+            Deprecation: { $ref: '#/components/headers/Deprecation' }
+            Sunset: { $ref: '#/components/headers/Sunset' }
+            Link: { $ref: '#/components/headers/SuccessorLink' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoanV1Page' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    post:
+      tags: [loans]
+      summary: Borrow a book (deprecated, use v2)
+      deprecated: true
+      operationId: createLoanV1
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoanCreate' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+            Deprecation: { $ref: '#/components/headers/Deprecation' }
+            Sunset: { $ref: '#/components/headers/Sunset' }
+            Link: { $ref: '#/components/headers/SuccessorLink' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoanV1' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/IdempotencyMismatch' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/v1/loans/{loanId}:
+    parameters:
+      - { $ref: '#/components/parameters/LoanId' }
+    get:
+      tags: [loans]
+      summary: Get a loan (deprecated, use v2)
+      deprecated: true
+      operationId: getLoanV1
+      responses:
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '200':
+          description: The loan
+          headers:
+            Deprecation: { $ref: '#/components/headers/Deprecation' }
+            Sunset: { $ref: '#/components/headers/Sunset' }
+            Link: { $ref: '#/components/headers/SuccessorLink' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoanV1' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/v1/loans/{loanId}/return:
+    parameters:
+      - { $ref: '#/components/parameters/LoanId' }
+    post:
+      tags: [loans]
+      summary: Return a borrowed copy (deprecated, use v2)
+      deprecated: true
+      operationId: returnLoanV1
+      responses:
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '200':
+          description: Returned; `feeCents` is set if the loan was overdue
+          headers:
+            Deprecation: { $ref: '#/components/headers/Deprecation' }
+            Sunset: { $ref: '#/components/headers/Sunset' }
+            Link: { $ref: '#/components/headers/SuccessorLink' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoanV1' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/v2/loans:
+    get:
+      tags: [loans]
+      summary: List loans
+      description: Members see only their own loans; librarians can filter by member.
+      operationId: listLoans
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/MemberIdQuery' }
+        - { $ref: '#/components/parameters/LoanStatusQuery' }
+      responses:
+        '200':
+          description: A page of loans
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoanPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    post:
+      tags: [loans]
+      summary: Borrow a book
+      description: |
+        Takes one AVAILABLE copy of the book (or the copy held for the caller's READY reservation).
+        Members borrow for themselves; librarians may pass `memberId`.
+      operationId: createLoan
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoanCreate' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Loan' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/IdempotencyMismatch' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/v2/loans/{loanId}:
+    parameters:
+      - { $ref: '#/components/parameters/LoanId' }
+    get:
+      tags: [loans]
+      summary: Get a loan
+      operationId: getLoan
+      responses:
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '200':
+          description: The loan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Loan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/v2/loans/{loanId}/return:
+    parameters:
+      - { $ref: '#/components/parameters/LoanId' }
+    post:
+      tags: [loans]
+      summary: Return a borrowed copy
+      operationId: returnLoan
+      responses:
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '200':
+          description: Returned; `fee` is set if the loan was overdue
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Loan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/v1/reservations:
+    get:
+      tags: [reservations]
+      summary: List reservations
+      description: Members see only their own; librarians can filter by member or book.
+      operationId: listReservations
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/MemberIdQuery' }
+        - name: bookId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: A page of reservations
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReservationPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    post:
+      tags: [reservations]
+      summary: Reserve a book that has no available copy
+      operationId: createReservation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReservationCreate' }
+      responses:
+        '201':
+          description: Created; `position` is the place in the queue (1 = next)
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reservation' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/v1/reservations/{reservationId}:
+    delete:
+      tags: [reservations]
+      summary: Cancel a reservation (its owner or a librarian)
+      operationId: cancelReservation
+      parameters:
+        - name: reservationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '204': { description: Cancelled }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /health/live:
+    get:
+      tags: [ops]
+      summary: Liveness probe
+      security: []
+      operationId: live
+      responses:
+        '200':
+          description: Process is up
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+  /health/ready:
+    get:
+      tags: [ops]
+      summary: Readiness probe (database and cache reachable)
+      security: []
+      operationId: ready
+      responses:
+        '200':
+          description: Ready
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+        '503':
+          description: Not ready
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+  /metrics:
+    get:
+      tags: [ops]
+      summary: Prometheus metrics
+      security: []
+      operationId: metrics
+      responses:
+        '200':
+          description: Prometheus text format
+          content:
+            text/plain:
+              schema: { type: string }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque cursor from `page.nextCursor` of the previous page.
+      schema: { type: string, maxLength: 500 }
+    BookId:
+      name: bookId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MemberId:
+      name: memberId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    LoanId:
+      name: loanId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MemberIdQuery:
+      name: memberId
+      in: query
+      description: Librarians only; members always get their own records.
+      schema: { type: string, format: uuid }
+    LoanStatusQuery:
+      name: status
+      in: query
+      schema: { $ref: '#/components/schemas/LoanStatus' }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: ETag from the last read of the resource.
+      schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Client-generated key (UUID recommended), kept for 24 hours.
+      schema: { type: string, minLength: 8, maxLength: 100 }
+
+  headers:
+    Location:
+      description: URL of the created resource
+      schema: { type: string }
+    ETag:
+      description: Version tag of the representation, quoted (e.g. `"3"`)
+      schema: { type: string }
+    Deprecation:
+      description: RFC 9745 deprecation date, e.g. `@1767225600`
+      schema: { type: string }
+    Sunset:
+      description: RFC 8594 date after which v1 loans may be removed
+      schema: { type: string }
+    SuccessorLink:
+      description: '`<https://.../api/v2/loans>; rel="successor-version"`'
+      schema: { type: string }
+
+  responses:
+    ValidationError:
+      description: Invalid input
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Missing or invalid token
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Authenticated but not allowed
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: No such resource
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Business rule conflict (see `code`)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    PreconditionFailed:
+      description: '`If-Match` does not match the current ETag'
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    PreconditionRequired:
+      description: '`If-Match` is missing'
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    TooManyRequests:
+      description: Rate limit exceeded; see `Retry-After`
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    IdempotencyMismatch:
+      description: The `Idempotency-Key` was already used with a different request body
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    Problem:
+      type: object
+      description: RFC 9457 problem details
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri-reference, examples: ['https://library.example/problems/no-copy-available'] }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code:
+          type: string
+          description: Stable machine-readable error code
+          enum:
+            - validation-failed
+            - unauthorized
+            - forbidden
+            - not-found
+            - conflict
+            - duplicate
+            - no-copy-available
+            - loan-limit-reached
+            - member-suspended
+            - already-returned
+            - book-has-active-loans
+            - book-has-loan-history
+            - already-reserved
+            - copy-available
+            - reservation-not-cancellable
+            - precondition-failed
+            - precondition-required
+            - idempotency-key-reused
+            - rate-limited
+            - internal
+        errors:
+          type: array
+          description: Field errors for `validation-failed`
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field: { type: string }
+              message: { type: string }
+        requestId: { type: string }
+
+    PageInfo:
+      type: object
+      required: [limit, nextCursor]
+      properties:
+        limit: { type: integer }
+        nextCursor:
+          type: [string, 'null']
+          description: Null on the last page
+
+    TokenRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password: { type: string, minLength: 1, maxLength: 200 }
+    TokenResponse:
+      type: object
+      required: [accessToken, tokenType, expiresIn]
+      properties:
+        accessToken: { type: string }
+        tokenType: { type: string, const: Bearer }
+        expiresIn: { type: integer, description: Seconds }
+
+    Author:
+      type: object
+      required: [id, name, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        bio: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    AuthorCreate:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        bio: { type: string, maxLength: 2000 }
+    AuthorPage:
+      type: object
+      required: [data, page]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Author' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+
+    AuthorRef:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+
+    Book:
+      type: object
+      required: [id, isbn, title, authors, tags, totalCopies, availableCopies, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        isbn: { type: string, description: ISBN-13, examples: ['9780132350884'] }
+        title: { type: string }
+        description: { type: [string, 'null'] }
+        publishedYear: { type: [integer, 'null'] }
+        authors: { type: array, items: { $ref: '#/components/schemas/AuthorRef' } }
+        tags: { type: array, items: { type: string } }
+        totalCopies: { type: integer, minimum: 0 }
+        availableCopies: { type: integer, minimum: 0 }
+        version: { type: integer, description: Same number as the ETag }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    BookCreate:
+      type: object
+      required: [isbn, title, authorIds]
+      additionalProperties: false
+      properties:
+        isbn: { type: string, pattern: '^97[89][0-9]{10}$', description: ISBN-13 with a valid check digit }
+        title: { type: string, minLength: 1, maxLength: 300 }
+        description: { type: string, maxLength: 5000 }
+        publishedYear: { type: integer, minimum: 1450, maximum: 2100 }
+        authorIds: { type: array, minItems: 1, maxItems: 20, uniqueItems: true, items: { type: string, format: uuid } }
+        tags: { type: array, maxItems: 20, uniqueItems: true, items: { type: string, minLength: 1, maxLength: 50 } }
+    BookUpdate:
+      type: object
+      description: JSON merge patch; omitted fields stay unchanged
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        title: { type: string, minLength: 1, maxLength: 300 }
+        description: { type: [string, 'null'], maxLength: 5000 }
+        publishedYear: { type: [integer, 'null'], minimum: 1450, maximum: 2100 }
+        authorIds: { type: array, minItems: 1, maxItems: 20, uniqueItems: true, items: { type: string, format: uuid } }
+        tags: { type: array, maxItems: 20, uniqueItems: true, items: { type: string, minLength: 1, maxLength: 50 } }
+    BookPage:
+      type: object
+      required: [data, page]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Book' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+
+    CopyStatus:
+      type: string
+      enum: [AVAILABLE, ON_LOAN, RESERVED, LOST]
+    Copy:
+      type: object
+      required: [id, bookId, barcode, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        bookId: { type: string, format: uuid }
+        barcode: { type: string }
+        status: { $ref: '#/components/schemas/CopyStatus' }
+        createdAt: { type: string, format: date-time }
+    CopyCreate:
+      type: object
+      required: [barcode]
+      additionalProperties: false
+      properties:
+        barcode: { type: string, pattern: '^[A-Z0-9-]{4,32}$' }
+
+    MemberStatus:
+      type: string
+      enum: [ACTIVE, SUSPENDED]
+    Role:
+      type: string
+      enum: [MEMBER, LIBRARIAN]
+    Member:
+      type: object
+      required: [id, email, name, role, status, maxActiveLoans, activeLoans, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+        status: { $ref: '#/components/schemas/MemberStatus' }
+        maxActiveLoans: { type: integer }
+        activeLoans: { type: integer }
+        createdAt: { type: string, format: date-time }
+    MemberCreate:
+      type: object
+      required: [email, name, password]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        password: { type: string, minLength: 10, maxLength: 72, description: 'bcrypt hashes at most 72 bytes' }
+        maxActiveLoans: { type: integer, minimum: 1, maximum: 10, default: 3 }
+    MemberStatusUpdate:
+      type: object
+      required: [status]
+      additionalProperties: false
+      properties:
+        status: { $ref: '#/components/schemas/MemberStatus' }
+        maxActiveLoans: { type: integer, minimum: 1, maximum: 10 }
+    MemberPage:
+      type: object
+      required: [data, page]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Member' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+
+    LoanStatus:
+      type: string
+      enum: [ACTIVE, OVERDUE, RETURNED]
+      description: OVERDUE is an ACTIVE loan past its due date
+    LoanCreate:
+      type: object
+      required: [bookId]
+      additionalProperties: false
+      properties:
+        bookId: { type: string, format: uuid }
+        memberId: { type: string, format: uuid, description: Librarians only; members borrow for themselves }
+    LoanV1:
+      type: object
+      description: v1 representation (deprecated); fee as integer cents
+      required: [id, bookId, copyId, memberId, status, borrowedAt, dueAt]
+      properties:
+        id: { type: string, format: uuid }
+        bookId: { type: string, format: uuid }
+        copyId: { type: string, format: uuid }
+        memberId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/LoanStatus' }
+        borrowedAt: { type: string, format: date-time }
+        dueAt: { type: string, format: date-time }
+        returnedAt: { type: [string, 'null'], format: date-time }
+        feeCents: { type: [integer, 'null'] }
+    LoanV1Page:
+      type: object
+      required: [data, page]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/LoanV1' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount: { type: string, description: 'Decimal string, e.g. "1.50"', examples: ['1.50'] }
+        currency: { type: string, const: EUR }
+    Loan:
+      type: object
+      description: v2 representation; embeds book and copy, fee as Money
+      required: [id, book, copy, memberId, status, borrowedAt, dueAt, overdueDays]
+      properties:
+        id: { type: string, format: uuid }
+        book:
+          type: object
+          required: [id, title, isbn]
+          properties:
+            id: { type: string, format: uuid }
+            title: { type: string }
+            isbn: { type: string }
+        copy:
+          type: object
+          required: [id, barcode]
+          properties:
+            id: { type: string, format: uuid }
+            barcode: { type: string }
+        memberId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/LoanStatus' }
+        borrowedAt: { type: string, format: date-time }
+        dueAt: { type: string, format: date-time }
+        returnedAt: { type: [string, 'null'], format: date-time }
+        overdueDays: { type: integer, minimum: 0 }
+        fee:
+          oneOf:
+            - { $ref: '#/components/schemas/Money' }
+            - { type: 'null' }
+    LoanPage:
+      type: object
+      required: [data, page]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Loan' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+
+    ReservationStatus:
+      type: string
+      enum: [WAITING, READY, FULFILLED, CANCELLED, EXPIRED]
+    ReservationCreate:
+      type: object
+      required: [bookId]
+      additionalProperties: false
+      properties:
+        bookId: { type: string, format: uuid }
+    Reservation:
+      type: object
+      required: [id, bookId, memberId, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        bookId: { type: string, format: uuid }
+        memberId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/ReservationStatus' }
+        position: { type: [integer, 'null'], description: Place in the queue while WAITING }
+        heldCopyId: { type: [string, 'null'], format: uuid }
+        readyUntil: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+    ReservationPage:
+      type: object
+      required: [data, page]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Reservation' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [UP, DOWN] }
+        checks:
+          type: object
+          additionalProperties: { type: string, enum: [UP, DOWN] }

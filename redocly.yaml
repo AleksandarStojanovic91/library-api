@@ -1,0 +1,7 @@
+# Redocly CLI config for `npx @redocly/cli lint contract/openapi.yaml` (CI job "Contract lint", `make lint-contract`).
+extends:
+  - recommended
+
+rules:
+  # The servers list points at the two local implementations on purpose (this is a local demo).
+  no-server-example.com: off

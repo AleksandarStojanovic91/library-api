@@ -1,0 +1,36 @@
+version: 2
+
+# Minor and patch updates are grouped into one PR per ecosystem and directory; majors arrive one by one.
+updates:
+  - package-ecosystem: maven
+    directory: /java
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directories: [/ts, /api-tests]
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    groups:
+      actions:
+        patterns: ['*']
+
+  # base images in java/Dockerfile and ts/Dockerfile
+  - package-ecosystem: docker
+    directories: [/java, /ts]
+    schedule: { interval: weekly, day: monday }
+
+  # postgres, redis and prometheus images in docker-compose*.yml
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule: { interval: weekly, day: monday }

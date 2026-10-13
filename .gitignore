@@ -1,0 +1,13 @@
+.DS_Store
+.idea/
+.vscode/
+*.log
+# java
+java/target/
+# ts
+node_modules/
+ts/dist/
+api-tests/test-results/
+api-tests/playwright-report/
+perf/results/*.json
+.env

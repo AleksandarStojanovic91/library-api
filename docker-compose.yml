@@ -1,0 +1,63 @@
+# Everything needed to run both implementations locally:
+#   docker compose up --build            -> Java on :8081, TypeScript on :8082
+#   docker compose --profile obs up      -> + Prometheus on :9090
+name: library-api
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: library
+      POSTGRES_PASSWORD: library
+      POSTGRES_DB: library
+    ports: ["5432:5432"]
+    volumes:
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U library"]
+      interval: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      retries: 20
+
+  api-java:
+    build: { context: ., dockerfile: java/Dockerfile }
+    environment:
+      PORT: "8081"
+      DATABASE_URL: postgres://library:library@postgres:5432/library_java
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me-at-least-32-bytes!!}
+      CLOCK_OFFSET_SECONDS: ${CLOCK_OFFSET_SECONDS:-0}
+    ports: ["8081:8081"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  api-ts:
+    build: { context: ., dockerfile: ts/Dockerfile }
+    environment:
+      PORT: "8082"
+      DATABASE_URL: postgres://library:library@postgres:5432/library_ts
+      REDIS_URL: redis://redis:6379/1
+      JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me-at-least-32-bytes!!}
+      CLOCK_OFFSET_SECONDS: ${CLOCK_OFFSET_SECONDS:-0}
+    ports: ["8082:8082"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: [obs]
+    volumes: ["./ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    ports: ["9090:9090"]
+
+volumes:
+  pgdata:

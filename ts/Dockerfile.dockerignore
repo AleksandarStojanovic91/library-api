@@ -1,0 +1,9 @@
+# Dockerfile-specific ignore file (BuildKit): the build context is the repository root.
+**
+!ts/package.json
+!ts/package-lock.json
+!ts/tsconfig.json
+!ts/tsconfig.build.json
+!ts/src/**
+!db/migrations/**
+!contract/openapi.yaml
