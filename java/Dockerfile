@@ -3,7 +3,7 @@
 # contract/openapi.yaml and db/migrations next to this module.
 
 # ---- build ---------------------------------------------------------------------------------------
-FROM eclipse-temurin:21-jdk-noble AS build
+FROM eclipse-temurin:25-jdk-noble AS build
 WORKDIR /workspace/java
 
 # Dependencies first, so source changes do not invalidate the (slow) dependency layer.
@@ -19,7 +19,7 @@ RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -q -DskipTests package \
  && java -Djarmode=tools -jar target/library-api-1.0.0.jar extract --layers --launcher --destination target/extracted
 
 # ---- runtime -------------------------------------------------------------------------------------
-FROM eclipse-temurin:21-jre-alpine AS runtime
+FROM eclipse-temurin:25-jre-alpine AS runtime
 RUN addgroup -S library && adduser -S -G library -H -s /sbin/nologin library
 WORKDIR /app
 
