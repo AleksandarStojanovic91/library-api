@@ -123,6 +123,15 @@ test.describe('loans: return', () => {
     expect((await anon.copies.list(book.id)).body.data[0]!.status).toBe('AVAILABLE');
   });
 
+  test('a return sent with Content-Type: application/json and no body (as k6 and axios send it) is a normal return', async ({ factory }) => {
+    const who = await factory.member();
+    const { book } = await factory.book({ copies: 1 });
+    const loan = await factory.loan(who, book.id);
+    const res = await who.api.http.send('POST', `/api/v2/loans/${loan.id}/return`, { contentType: 'application/json' });
+    expect(res).toHaveStatus(200);
+    expect(res.body).toMatchObject({ id: loan.id, status: 'RETURNED' });
+  });
+
   test('returning twice is 409 already-returned', async ({ factory }) => {
     const who = await factory.member();
     const { book } = await factory.book({ copies: 1 });
