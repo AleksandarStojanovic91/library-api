@@ -3,7 +3,7 @@
 # migrations and the shared contract next to the service.
 
 # ---- build: compile TypeScript ------------------------------------------------------------------------------
-FROM node:24-alpine AS build
+FROM node:25-alpine AS build
 WORKDIR /app/ts
 COPY ts/package.json ts/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
@@ -12,13 +12,13 @@ COPY ts/src ./src
 RUN npm run build
 
 # ---- deps: production dependencies only ---------------------------------------------------------------------
-FROM node:24-alpine AS deps
+FROM node:25-alpine AS deps
 WORKDIR /app/ts
 COPY ts/package.json ts/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --no-audit --no-fund
 
 # ---- runtime ------------------------------------------------------------------------------------------------
-FROM node:24-alpine AS runtime
+FROM node:25-alpine AS runtime
 ENV NODE_ENV=production \
     PORT=8082 \
     MIGRATIONS_DIR=/app/db/migrations \
