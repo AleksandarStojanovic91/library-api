@@ -62,22 +62,6 @@ jobs:
     defaults:
       run:
         working-directory: java
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: library
-          POSTGRES_PASSWORD: library
-          POSTGRES_DB: library_java
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U library" --health-interval 3s --health-retries 20
-      redis:
-        image: redis:7-alpine
-        ports: ["6379:6379"]
-    env:
-      DATABASE_URL: postgres://library:library@localhost:5432/library_java
-      REDIS_URL: redis://localhost:6379/0
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
@@ -94,22 +78,6 @@ jobs:
     defaults:
       run:
         working-directory: ts
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: library
-          POSTGRES_PASSWORD: library
-          POSTGRES_DB: library_ts
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U library" --health-interval 3s --health-retries 20
-      redis:
-        image: redis:7-alpine
-        ports: ["6379:6379"]
-    env:
-      DATABASE_URL: postgres://library:library@localhost:5432/library_ts
-      REDIS_URL: redis://localhost:6379/1
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

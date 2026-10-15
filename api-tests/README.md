@@ -16,7 +16,7 @@ Built with Playwright Test, API only (no browsers are installed or started).
 
 The second and third layer run inside the API client (`src/client/http.ts`), so a test that only checks
 `expect(res).toHaveStatus(201)` still fails if the body has the wrong shape or a header is missing. That is how
-259 tests per implementation cover far more than 259 assertions.
+260 tests per implementation cover far more than 260 assertions.
 
 Two details of the contract check:
 
@@ -135,14 +135,14 @@ tests/unit/                offline self-tests
 | Cursor pagination: no duplicates or gaps, ties, NULLS LAST, inserts between pages; documented 400 for bad limit/cursor on all six list endpoints | `pagination.spec.ts` | 36 |
 | Copies, authors, members | `copies-authors-members.spec.ts` | 19 |
 | Member status: `PUT /members/{id}/status` (librarian only, 403, 404, validation); suspended members can read and return but get `member-suspended` on borrow (v1, v2, on behalf) and reserve | `members-status.spec.ts` | 17 |
-| Loans: v1 vs v2 shapes, deprecation headers, due date, return, loan limit, no copy available, filters | `loans.spec.ts` | 19 |
+| Loans: v1 vs v2 shapes, deprecation headers, due date, return, loan limit, no copy available, filters | `loans.spec.ts` | 20 |
 | Reservations: FIFO positions, READY hold, only the holder can borrow, cancel passes the hold on | `reservations.spec.ts` | 13 |
 | Idempotency: replay, stored response, 422 on reuse, per-member scope, stored 4xx, 5 concurrent duplicates | `idempotency.spec.ts` | 8 |
 | Concurrency: 10 borrows for 2 copies → exactly 2, loan limit under parallel borrows, parallel returns, reserve-vs-return race | `concurrency.spec.ts` | 5 |
 | Error catalogue: each reachable problem code with its exact title, unknown route, field pointers | `errors.spec.ts` | 22 |
 | Observability: X-Request-Id, health, metrics, `/openapi.yaml` equals the contract, `/docs` | `observability.spec.ts` | 13 |
 | Rate limiting: headers, budget per client, documented 429 (opt-in) | `rate-limit.spec.ts` | 3 |
-| **Total per implementation** | | **259** |
+| **Total per implementation** | | **260** |
 | Time travel: overdueDays = floor, fee = ceil(started days) × 50c (v1 and v2), SQL status filter, late fee on return, reservation expiry passes the hold on, tokens unaffected by the clock offset | `tests/time-travel` | 10 |
 | Suite self-tests | `tests/unit` | 26 |
 

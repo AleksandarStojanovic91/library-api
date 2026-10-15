@@ -353,6 +353,6 @@ retrofit, which is why they are in place from the start.
 |---|---|---|
 | Unit | `java/`, `ts/` | domain rules (fee, status, limits) with a fixed clock |
 | Integration | `java/`, `ts/` | repositories and transactions against a real Postgres |
-| Shared black-box suite | `api-tests/` | the same 259 HTTP tests against both services; every response validated against the contract and the SPEC |
+| Shared black-box suite | `api-tests/` | the same 260 HTTP tests against both services; every response validated against the contract and the SPEC |
 | Time travel | `api-tests/tests/time-travel` | overdue fees and reservation expiry, using a second instance with a shifted clock |
 | Performance | `perf/` | k6 smoke in CI (p95 < 300 ms, errors < 1 %); load test on demand |

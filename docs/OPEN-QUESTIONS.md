@@ -1,7 +1,7 @@
 # Open questions
 
 Contradictions and gaps found in `contract/openapi.yaml`, `docs/SPEC.md` and `db/` while building the shared
-parts (test suite, perf, CI, docs). The maintainer answered the first round on 2026-10-13 in
+parts (test suite, perf, CI, docs). The first round was decided on 2026-10-13 in
 **SPEC.md "Decisions"** (referred to below as D1–D8) and in the contract. The test suite follows those answers.
 
 Status: **resolved** (decided; the suite tests it), **open** (still undecided; the suite's current assumption is
@@ -12,12 +12,12 @@ given), **note** (nothing to decide).
 | | Resolved | Open | Note |
 |---|---|---|---|
 | Contract lint (L) | L1 | L2, L3 (partly), L4 | L5 |
-| Contract gaps (C) | C1, C2, C5 | C3, C4 (partly), C6, C7, C8 | |
+| Contract gaps (C) | C1, C2, C3, C5 | C4 (partly), C6, C7, C8 | |
 | SPEC questions (S) | S1, S2, S3, S6, S12, S16 | S4 (partly), S5, S7, S8, S11, S13, S14, S15 | S9, S10, S17–S22 |
 
 ## 1. Contract lint (`npx @redocly/cli lint contract/openapi.yaml`, Redocly CLI 2.63.0)
 
-Current result: **valid, 0 errors, 11 warnings** (the CI job passes).
+Current result: **valid, 0 errors, 10 warnings** (the CI job passes).
 
 | # | Status | Finding | Resolution / suggestion |
 |---|---|---|---|
@@ -36,7 +36,7 @@ The suite validates every response against the contract. An error status an oper
 |---|---|---|---|
 | C1 | **resolved** (D4) | 429 was not documented anywhere. | `TooManyRequests` (Problem + `Retry-After`) on every operation except `/health/*` and `/metrics`. Tests: `rate-limit.spec.ts` asserts the 429 is documented and carries `Retry-After`; offline self-tests check the contract. |
 | C2 | **resolved** (D4) | 400 for bad `limit`/`cursor` was documented only on `listBooks`. | now on every list endpoint. Tests: `pagination.spec.ts` "400 on every list endpoint" (6 endpoints × 3 bad inputs, each asserted as documented). |
-| C3 | open | A malformed UUID in a path (`GET /api/v1/books/not-a-uuid`): neither contract nor SPEC says 400 or 404. | suite expects **400 `validation-failed`**; it shows up as a `contract-gap` annotation because `getBook` does not list 400. Suggest: add the rule to SPEC "Errors" and 400 to operations with path ids. |
+| C3 | **resolved** | A malformed UUID in a path (`GET /api/v1/books/not-a-uuid`): neither contract nor SPEC said 400 or 404. | SPEC "Errors" now states the rule and every operation with a path id lists **400 `validation-failed`**; the suite tests it. |
 | C4 | partly resolved | Headers described only in prose. `Retry-After` is now declared on 429. Still undeclared: `X-Request-Id`, `RateLimit-*`, `WWW-Authenticate`, `Idempotent-Replayed`, `X-Cache`. | the suite checks them through the SPEC rules; declaring them in `components.headers` would help generated clients |
 | C5 | **resolved** (D5) | Nullable fields could be omitted or `null`. | always present, `null` when empty. The suite treats every `[x, 'null']` property of a response schema as required, so every response checks it; `books.spec.ts` also asserts it on the raw JSON. The contract's `required` lists still omit these fields; adding them would make the contract say what D5 says. |
 | C6 | open | `POST /books/{id}/copies` returns `Location`, but there is no single-copy route. | suite only checks Location ends with the copy id |

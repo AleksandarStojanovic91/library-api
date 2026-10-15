@@ -267,4 +267,4 @@ src/main/java/dev/stojanovic/library
 └── config          Spring wiring, security chain, Jackson, environment mapping
 ```
 
-Questions and gaps found in the shared contract/SPEC are collected in [`NOTES-for-maintainer.md`](NOTES-for-maintainer.md).
+Implementation choices where the contract and SPEC leave room: [`IMPLEMENTATION-NOTES.md`](IMPLEMENTATION-NOTES.md).

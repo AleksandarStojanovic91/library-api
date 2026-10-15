@@ -140,7 +140,7 @@ Some rules that hold across the code:
   back on the shelf" happens under it, and so does the reservation-time check, so a reservation can never sit
   WAITING next to an AVAILABLE copy. It is taken as `FOR NO KEY UPDATE`. That conflicts with every other queue
   operation but not with the `KEY SHARE` lock a loan insert's foreign key check takes, so borrowing never waits
-  for a return (see `NOTES-for-maintainer.md`).
+  for a return (see [IMPLEMENTATION-NOTES.md](IMPLEMENTATION-NOTES.md)).
 - The fixed lock order is what rules out deadlocks. Operations that start from a loan or a reservation read the
   `book_id` without a lock first and re-check the row after locking.
 
