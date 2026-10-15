@@ -113,6 +113,21 @@ describe('problem details', () => {
     expect(res.body).toMatchObject({ code: 'validation-failed', detail: 'Malformed JSON body' });
   });
 
+  it('an empty body sent as application/json is no body: fine where none is needed, missing where one is', async () => {
+    const member = await t.newMember();
+    const book = await t.newBook({ copies: 1 });
+    const loan = await t.borrow(member.token, book.id);
+    expect(loan.status).toBe(201);
+    const returned = await t.request('POST', `/api/v2/loans/${loan.body.id}/return`, { token: member.token, rawBody: '' });
+    expect(returned.status).toBe(200);
+    expect(returned.body.status).toBe('RETURNED');
+
+    const create = await t.request('POST', '/api/v1/books', { token: await t.librarian(), rawBody: '' });
+    expect(create.status).toBe(400);
+    expect(create.body.code).toBe('validation-failed');
+    expect(create.body.detail).not.toBe('Malformed JSON body');
+  });
+
   it('a JSON body that is not an object cannot be read either', async () => {
     for (const rawBody of ['"just a string"', '[1, 2, 3]']) {
       const res = await t.request('POST', '/api/v1/books', { token: await t.librarian(), rawBody });
