@@ -71,10 +71,10 @@ test.describe('contract validator', () => {
   });
 
   test('an undocumented error status is a gap (annotated), an undocumented success status is a violation', () => {
-    // a malformed path id gives 400, which getBook still does not list (docs/OPEN-QUESTIONS.md C3)
-    const gap = check(closed, 'GET', '/api/v1/books/nope', 400, problem('validation-failed', 400, '/api/v1/books/nope'), 'application/problem+json');
+    // getBook documents 400, 404 and 429 but not 409
+    const gap = check(closed, 'GET', `/api/v1/books/${ID}`, 409, problem('duplicate', 409, `/api/v1/books/${ID}`), 'application/problem+json');
     expect(gap.violations).toEqual([]);
-    expect(gap.gaps.join()).toContain('400');
+    expect(gap.gaps.join()).toContain('409');
     const wrong = check(closed, 'POST', '/api/v1/books', 200, book);
     expect(wrong.violations.join()).toContain('does not document');
   });

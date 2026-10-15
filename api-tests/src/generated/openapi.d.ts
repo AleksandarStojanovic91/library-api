@@ -552,6 +552,7 @@ export interface components {
             /** Format: email */
             email: string;
             name: string;
+            /** @description bcrypt hashes at most 72 bytes */
             password: string;
             /** @default 3 */
             maxActiveLoans?: number;
@@ -912,6 +913,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["ValidationError"];
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
         };
@@ -934,6 +936,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["ValidationError"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -1001,6 +1004,7 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["ValidationError"];
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
         };
@@ -1113,6 +1117,7 @@ export interface operations {
                     "application/json": components["schemas"]["Author"];
                 };
             };
+            400: components["responses"]["ValidationError"];
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
         };
@@ -1217,6 +1222,7 @@ export interface operations {
                     "application/json": components["schemas"]["Member"];
                 };
             };
+            400: components["responses"]["ValidationError"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -1349,6 +1355,7 @@ export interface operations {
                     "application/json": components["schemas"]["LoanV1"];
                 };
             };
+            400: components["responses"]["ValidationError"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -1378,6 +1385,7 @@ export interface operations {
                     "application/json": components["schemas"]["LoanV1"];
                 };
             };
+            400: components["responses"]["ValidationError"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -1471,6 +1479,7 @@ export interface operations {
                     "application/json": components["schemas"]["Loan"];
                 };
             };
+            400: components["responses"]["ValidationError"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -1497,6 +1506,7 @@ export interface operations {
                     "application/json": components["schemas"]["Loan"];
                 };
             };
+            400: components["responses"]["ValidationError"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -1583,6 +1593,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["ValidationError"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
