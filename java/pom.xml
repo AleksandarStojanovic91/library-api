@@ -6,7 +6,7 @@
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>4.1.1</version>
+    <version>4.1.2</version>
     <relativePath/>
   </parent>
 
@@ -22,7 +22,7 @@
     <repo.root>${project.basedir}/..</repo.root>
     <archunit.version>1.5.1</archunit.version>
     <json-schema-validator.version>3.0.8</json-schema-validator.version>
-    <swagger-ui.version>5.33.2</swagger-ui.version>
+    <swagger-ui.version>5.34.0</swagger-ui.version>
   </properties>
 
   <dependencies>
